@@ -1,0 +1,42 @@
+name: sync main from upstream
+
+# Keeps a fork's main equal to samouraiworld/main. Fast-forward only: a diverged
+# or ahead main is reported, never overwritten.
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    # No-op on the canonical repo, which is the source rather than a follower.
+    if: github.repository != 'samouraiworld/gno-agent-workspace'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Fast-forward main to samouraiworld/main
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/samouraiworld/gno-agent-workspace.git
+          git fetch --quiet upstream main
+
+          if git merge-base --is-ancestor HEAD upstream/main; then
+            git merge --ff-only upstream/main
+            git push origin main
+            echo "main fast-forwarded to $(git rev-parse --short upstream/main)."
+          elif git merge-base --is-ancestor upstream/main HEAD; then
+            echo "main is ahead of upstream. Nothing to sync; open a PR to samouraiworld to land:"
+            git log --oneline upstream/main..HEAD
+          else
+            echo "::error::main and samouraiworld/main diverged at $(git merge-base HEAD upstream/main | cut -c1-9). Refusing to force-push. Reset main to upstream by hand, then this job resumes."
+            git rev-list --left-right --count HEAD...upstream/main
+            exit 1
+          fi
